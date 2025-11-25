@@ -1,6 +1,10 @@
-from flask import Flask
+from flask import Flask, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 import os
+from dotenv import load_dotenv
+
+# .envファイルを読み込む
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -11,9 +15,14 @@ app = Flask(__name__)
 
 # ▼ 本番AWS用（こちらの # を外して有効化！）
 DB_USER = "admin"
-DB_PASSWORD = "8108Za10" 
+DB_PASSWORD = os.getenv("DB_PASSWORD") 
 DB_ENDPOINT = "zaiko-1.c9ouqcm6qmdp.ap-northeast-1.rds.amazonaws.com"
 DB_NAME = "mydatabase"
+
+if DB_PASSWORD is None:
+    # 環境変数が無い場合のフォールバック（またはエラーにする）
+    # 今回はわかりやすくエラーにします
+    raise ValueError("DB_PASSWORD environment variable is not set")
 
 app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_ENDPOINT}/{DB_NAME}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -22,27 +31,51 @@ db = SQLAlchemy(app)
 
 class Stock(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    item_code = db.Column(db.String(20), nullable=False) # 品番を追加
     item_name = db.Column(db.String(80), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
     try:
+        # フォームからデータが送られてきたら保存する
+        if request.method == 'POST':
+            item_code = request.form['item_code']
+            item_name = request.form['item_name']
+            quantity = request.form['quantity']
+            
+            new_stock = Stock(item_code=item_code, item_name=item_name, quantity=int(quantity))
+            db.session.add(new_stock)
+            db.session.commit()
+            return redirect(url_for('index'))
+
         # データが空なら初期データを入れる（テスト用）
         if Stock.query.count() == 0:
-            sample1 = Stock(item_name="テスト商品A", quantity=10)
-            sample2 = Stock(item_name="テスト商品B", quantity=5)
+            sample1 = Stock(item_code="A001", item_name="テスト商品A", quantity=10)
+            sample2 = Stock(item_code="B002", item_name="テスト商品B", quantity=5)
             db.session.add(sample1)
             db.session.add(sample2)
             db.session.commit()
 
         stocks = Stock.query.all()
-        html = "<h1>📦 ローカル開発中：在庫管理システム</h1>"
+        html = "<h1>📦 在庫管理システム</h1>"
         html += "<p>環境: AWS EC2 (MySQL)</p><hr>"
         
-        html += "<ul>"
+        # 入力フォーム
+        html += """
+        <h3>新規登録</h3>
+        <form method="POST">
+            品番: <input type="text" name="item_code" required>
+            品名: <input type="text" name="item_name" required>
+            数量: <input type="number" name="quantity" required>
+            <button type="submit">追加</button>
+        </form>
+        <hr>
+        """
+        
+        html += "<h3>在庫一覧</h3><ul>"
         for stock in stocks:
-            html += f"<li>{stock.item_name}: {stock.quantity} 個</li>"
+            html += f"<li>【{stock.item_code}】 {stock.item_name}: {stock.quantity} 個</li>"
         html += "</ul>"
         
         return html
