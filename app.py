@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, url_for
+from flask import Flask, request, redirect, url_for, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import os
 from dotenv import load_dotenv
@@ -11,7 +11,7 @@ app = Flask(__name__)
 # --- 修正イメージ ---
 
 # ▼ ローカル用（これをコメントアウトして無効化）
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///local_inventory.db'
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'local_inventory.db')
 
 # ▼ 本番AWS用（こちらの # を外して有効化！）
 DB_USER = "admin"
@@ -35,6 +35,14 @@ class Stock(db.Model):
     item_name = db.Column(db.String(80), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
 
+@app.route('/api/item/<item_code>', methods=['GET'])
+def get_item_name(item_code):
+    stock = Stock.query.filter_by(item_code=item_code).first()
+    if stock:
+        return jsonify({"item_name": stock.item_name})
+    else:
+        return jsonify({"error": "Not found"}), 404
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     try:
@@ -50,7 +58,7 @@ def index():
             return redirect(url_for('index'))
 
         # データが空なら初期データを入れる（テスト用）
-        if Stock.query.count() == 0:
+        if Stock.query.first() is None:
             sample1 = Stock(item_code="A001", item_name="テスト商品A", quantity=10)
             sample2 = Stock(item_code="B002", item_name="テスト商品B", quantity=5)
             db.session.add(sample1)
@@ -65,11 +73,29 @@ def index():
         html += """
         <h3>新規登録</h3>
         <form method="POST">
-            品番: <input type="text" name="item_code" required>
-            品名: <input type="text" name="item_name" required>
-            数量: <input type="number" name="quantity" required>
+            品番: <input type="text" name="item_code" id="item_code" required>
+            <button type="button" onclick="fetchItemName()">品名検索</button><br>
+            品名: <input type="text" name="item_name" id="item_name" required><br>
+            数量: <input type="number" name="quantity" required><br>
             <button type="submit">追加</button>
         </form>
+        <script>
+        function fetchItemName() {
+            const code = document.getElementById('item_code').value;
+            if (!code) return;
+            fetch('/api/item/' + code)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.item_name) {
+                        document.getElementById('item_name').value = data.item_name;
+                    } else {
+                        alert('商品が見つかりませんでした');
+                        document.getElementById('item_name').value = '';
+                    }
+                })
+                .catch(err => console.error(err));
+        }
+        </script>
         <hr>
         """
         
