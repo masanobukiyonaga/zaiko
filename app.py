@@ -43,18 +43,34 @@ def get_item_name(item_code):
     else:
         return jsonify({"error": "Not found"}), 404
 
+@app.route('/api/code/<item_name>', methods=['GET'])
+def get_item_code(item_name):
+    stock = Stock.query.filter_by(item_name=item_name).first()
+    if stock:
+        return jsonify({"item_code": stock.item_code})
+    else:
+        return jsonify({"error": "Not found"}), 404
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     try:
         # フォームからデータが送られてきたら保存する
         if request.method == 'POST':
+            action = request.form.get('action')
             item_code = request.form['item_code']
-            item_name = request.form['item_name']
-            quantity = request.form['quantity']
             
-            new_stock = Stock(item_code=item_code, item_name=item_name, quantity=int(quantity))
-            db.session.add(new_stock)
-            db.session.commit()
+            if action == 'add':
+                item_name = request.form['item_name']
+                quantity = request.form['quantity']
+                new_stock = Stock(item_code=item_code, item_name=item_name, quantity=int(quantity))
+                db.session.add(new_stock)
+                db.session.commit()
+            elif action == 'delete':
+                stock = Stock.query.filter_by(item_code=item_code).first()
+                if stock:
+                    db.session.delete(stock)
+                    db.session.commit()
+            
             return redirect(url_for('index'))
 
         # データが空なら初期データを入れる（テスト用）
@@ -71,13 +87,16 @@ def index():
         
         # 入力フォーム
         html += """
-        <h3>新規登録</h3>
+        <h3>新規登録 / 削除</h3>
         <form method="POST">
             品番: <input type="text" name="item_code" id="item_code" required>
-            <button type="button" onclick="fetchItemName()">品名検索</button><br>
-            品名: <input type="text" name="item_name" id="item_name" required><br>
-            数量: <input type="number" name="quantity" required><br>
-            <button type="submit">追加</button>
+            <button type="button" onclick="fetchItemName()">品番検索</button><br>
+            品名: <input type="text" name="item_name" id="item_name">
+            <button type="button" onclick="fetchItemCode()">品名検索</button><br>
+            数量: <input type="number" name="quantity"><br>
+            <br>
+            <button type="submit" name="action" value="add">追加</button>
+            <button type="submit" name="action" value="delete" style="background-color: #ff4d4d; color: white;" onclick="return confirm('本当に削除しますか？');">削除</button>
         </form>
         <script>
         function fetchItemName() {
@@ -91,6 +110,21 @@ def index():
                     } else {
                         alert('商品が見つかりませんでした');
                         document.getElementById('item_name').value = '';
+                    }
+                })
+                .catch(err => console.error(err));
+        }
+        function fetchItemCode() {
+            const name = document.getElementById('item_name').value;
+            if (!name) return;
+            fetch('/api/code/' + name)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.item_code) {
+                        document.getElementById('item_code').value = data.item_code;
+                    } else {
+                        alert('商品が見つかりませんでした');
+                        document.getElementById('item_code').value = '';
                     }
                 })
                 .catch(err => console.error(err));
@@ -112,4 +146,4 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     # ローカル開発用ポート設定（80番ポートで起動）
-    app.run(debug=True, host='0.0.0.0', port=80)
+    app.run(debug=True, host='127.0.0.1', port=5000)
