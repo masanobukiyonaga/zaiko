@@ -11,7 +11,7 @@ app = Flask(__name__)
 # --- 修正イメージ ---
 
 # ▼ ローカル用（これをコメントアウトして無効化）
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'local_inventory.db')
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'local_inventory_v2.db')
 
 # ▼ 本番AWS用（こちらの # を外して有効化！）
 DB_USER = "admin"
@@ -31,15 +31,15 @@ db = SQLAlchemy(app)
 
 class Stock(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    item_code = db.Column(db.String(20), nullable=False) # 品番を追加
+    item_code = db.Column(db.String(20), nullable=False) # 品番
     item_name = db.Column(db.String(80), nullable=False)
-    quantity = db.Column(db.Integer, nullable=False)
+    lot_number = db.Column(db.String(50), nullable=False) # 数量の代わりにロットNo.
 
 @app.route('/api/item/<item_code>', methods=['GET'])
 def get_item_name(item_code):
     stock = Stock.query.filter_by(item_code=item_code).first()
     if stock:
-        return jsonify({"item_name": stock.item_name})
+        return jsonify({"item_name": stock.item_name, "lot_number": stock.lot_number})
     else:
         return jsonify({"error": "Not found"}), 404
 
@@ -47,7 +47,15 @@ def get_item_name(item_code):
 def get_item_code(item_name):
     stock = Stock.query.filter_by(item_name=item_name).first()
     if stock:
-        return jsonify({"item_code": stock.item_code})
+        return jsonify({"item_code": stock.item_code, "lot_number": stock.lot_number})
+    else:
+        return jsonify({"error": "Not found"}), 404
+
+@app.route('/api/lot/<lot_number>', methods=['GET'])
+def get_item_by_lot(lot_number):
+    stock = Stock.query.filter_by(lot_number=lot_number).first()
+    if stock:
+        return jsonify({"item_code": stock.item_code, "item_name": stock.item_name})
     else:
         return jsonify({"error": "Not found"}), 404
 
@@ -61,8 +69,8 @@ def index():
             
             if action == 'add':
                 item_name = request.form['item_name']
-                quantity = request.form['quantity']
-                new_stock = Stock(item_code=item_code, item_name=item_name, quantity=int(quantity))
+                lot_number = request.form['lot_number']
+                new_stock = Stock(item_code=item_code, item_name=item_name, lot_number=lot_number)
                 db.session.add(new_stock)
                 db.session.commit()
             elif action == 'delete':
@@ -75,8 +83,8 @@ def index():
 
         # データが空なら初期データを入れる（テスト用）
         if Stock.query.first() is None:
-            sample1 = Stock(item_code="A001", item_name="テスト商品A", quantity=10)
-            sample2 = Stock(item_code="B002", item_name="テスト商品B", quantity=5)
+            sample1 = Stock(item_code="A001", item_name="テスト商品A", lot_number="LOT001")
+            sample2 = Stock(item_code="B002", item_name="テスト商品B", lot_number="LOT002")
             db.session.add(sample1)
             db.session.add(sample2)
             db.session.commit()
@@ -93,7 +101,8 @@ def index():
             <button type="button" onclick="fetchItemName()">品番検索</button><br>
             品名: <input type="text" name="item_name" id="item_name">
             <button type="button" onclick="fetchItemCode()">品名検索</button><br>
-            数量: <input type="number" name="quantity"><br>
+            ロットNo.: <input type="text" name="lot_number" id="lot_number" required>
+            <button type="button" onclick="fetchItemByLot()">ロット検索</button><br>
             <br>
             <button type="submit" name="action" value="add">追加</button>
             <button type="submit" name="action" value="delete" style="background-color: #ff4d4d; color: white;" onclick="return confirm('本当に削除しますか？');">削除</button>
@@ -107,6 +116,7 @@ def index():
                 .then(data => {
                     if (data.item_name) {
                         document.getElementById('item_name').value = data.item_name;
+                        if(data.lot_number) document.getElementById('lot_number').value = data.lot_number;
                     } else {
                         alert('商品が見つかりませんでした');
                         document.getElementById('item_name').value = '';
@@ -122,9 +132,25 @@ def index():
                 .then(data => {
                     if (data.item_code) {
                         document.getElementById('item_code').value = data.item_code;
+                        if(data.lot_number) document.getElementById('lot_number').value = data.lot_number;
                     } else {
                         alert('商品が見つかりませんでした');
                         document.getElementById('item_code').value = '';
+                    }
+                })
+                .catch(err => console.error(err));
+        }
+        function fetchItemByLot() {
+            const lot = document.getElementById('lot_number').value;
+            if (!lot) return;
+            fetch('/api/lot/' + lot)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.item_code) {
+                        document.getElementById('item_code').value = data.item_code;
+                        document.getElementById('item_name').value = data.item_name;
+                    } else {
+                        alert('商品が見つかりませんでした');
                     }
                 })
                 .catch(err => console.error(err));
@@ -135,7 +161,7 @@ def index():
         
         html += "<h3>在庫一覧</h3><ul>"
         for stock in stocks:
-            html += f"<li>【{stock.item_code}】 {stock.item_name}: {stock.quantity} 個</li>"
+            html += f"<li>【{stock.item_code}】 {stock.item_name} (LOT: {stock.lot_number})</li>"
         html += "</ul>"
         
         return html
