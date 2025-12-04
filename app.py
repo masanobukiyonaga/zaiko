@@ -1,13 +1,16 @@
 from flask import Flask, request, redirect, url_for, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 # .envファイルを読み込む
 load_dotenv()
 
 app = Flask(__name__)
+
+# JSTの定義
+JST = timezone(timedelta(hours=9), 'JST')
 
 # --- 修正イメージ ---
 
@@ -46,7 +49,7 @@ class InventoryLog(db.Model):
     lot_number = db.Column(db.String(50), nullable=False)
     quantity = db.Column(db.Integer, nullable=False, default=0) # 変動数量
     action = db.Column(db.String(20), nullable=False) # "新規登録", "入庫", "出庫", "削除"
-    timestamp = db.Column(db.DateTime, default=datetime.now)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(JST).replace(tzinfo=None))
 
 # --- API ---
 
