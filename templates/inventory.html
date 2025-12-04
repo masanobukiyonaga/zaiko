@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>📦 在庫確認 / 入出庫</h1>
+
+<form method="GET" style="margin-bottom: 20px;">
+    <input type="text" name="search" placeholder="品番・品名・ロットNoで絞り込み" value="{{ search }}">
+    <button type="submit">検索</button>
+    <a href="{{ url_for('inventory_page') }}"><button type="button">リセット</button></a>
+</form>
+
+<p>現在の在庫一覧です。</p>
+
+<table>
+    <tr>
+        <th>品番</th>
+        <th>品名</th>
+        <th>ロットNo.</th>
+        <th>現在数量</th>
+        <th>入出庫操作</th>
+    </tr>
+    {% for stock in stocks %}
+    <tr>
+        <td>{{ stock.item_code }}</td>
+        <td>{{ stock.item_name }}</td>
+        <td>{{ stock.lot_number }}</td>
+        <td style="font-size: 1.2em; font-weight: bold;">{{ stock.quantity }}</td>
+        <td>
+            <form method="POST" style="display: inline;">
+                <input type="hidden" name="stock_id" value="{{ stock.id }}">
+                <input type="number" name="amount" value="1" min="1" style="width: 60px;">
+                <button type="submit" name="action_type" value="in" class="btn-in">入庫</button>
+                <button type="submit" name="action_type" value="out" class="btn-out">出庫</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

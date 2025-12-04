@@ -1,6 +1,7 @@
-from flask import Flask, request, redirect, url_for, jsonify
+from flask import Flask, request, redirect, url_for, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 # .envファイルを読み込む
@@ -29,11 +30,25 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
+# --- モデル定義 ---
+
 class Stock(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     item_code = db.Column(db.String(20), nullable=False) # 品番
     item_name = db.Column(db.String(80), nullable=False)
-    lot_number = db.Column(db.String(50), nullable=False) # 数量の代わりにロットNo.
+    lot_number = db.Column(db.String(50), nullable=False) # ロットNo.
+    quantity = db.Column(db.Integer, nullable=False, default=0) # 数量 (初期値0)
+
+class InventoryLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    item_code = db.Column(db.String(20), nullable=False)
+    item_name = db.Column(db.String(80), nullable=False)
+    lot_number = db.Column(db.String(50), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False, default=0) # 変動数量
+    action = db.Column(db.String(20), nullable=False) # "新規登録", "入庫", "出庫", "削除"
+    timestamp = db.Column(db.DateTime, default=datetime.now)
+
+# --- API ---
 
 @app.route('/api/item/<item_code>', methods=['GET'])
 def get_item_name(item_code):
@@ -59,117 +74,105 @@ def get_item_by_lot(lot_number):
     else:
         return jsonify({"error": "Not found"}), 404
 
-@app.route('/', methods=['GET', 'POST'])
+# --- ページ ---
+
+@app.route('/')
 def index():
-    try:
-        # フォームからデータが送られてきたら保存する
-        if request.method == 'POST':
-            action = request.form.get('action')
-            item_code = request.form['item_code']
-            
-            if action == 'add':
-                item_name = request.form['item_name']
-                lot_number = request.form['lot_number']
-                new_stock = Stock(item_code=item_code, item_name=item_name, lot_number=lot_number)
-                db.session.add(new_stock)
-                db.session.commit()
-            elif action == 'delete':
-                stock = Stock.query.filter_by(item_code=item_code).first()
-                if stock:
-                    db.session.delete(stock)
-                    db.session.commit()
-            
-            return redirect(url_for('index'))
+    return redirect(url_for('inventory_page'))
 
-        # データが空なら初期データを入れる（テスト用）
-        if Stock.query.first() is None:
-            sample1 = Stock(item_code="A001", item_name="テスト商品A", lot_number="LOT001")
-            sample2 = Stock(item_code="B002", item_name="テスト商品B", lot_number="LOT002")
-            db.session.add(sample1)
-            db.session.add(sample2)
+@app.route('/register', methods=['GET', 'POST'])
+def register_page():
+    message = ""
+    if request.method == 'POST':
+        action = request.form.get('action')
+        item_code = request.form['item_code']
+        lot_number = request.form['lot_number']
+        
+        if action == 'add':
+            item_name = request.form['item_name']
+            # 数量は0で登録
+            new_stock = Stock(item_code=item_code, item_name=item_name, lot_number=lot_number, quantity=0)
+            db.session.add(new_stock)
+            
+            # ログ記録
+            log = InventoryLog(item_code=item_code, item_name=item_name, lot_number=lot_number, quantity=0, action="新規登録")
+            db.session.add(log)
+            
             db.session.commit()
+            message = f"<p style='color: green;'>【新規登録】{item_name} (LOT: {lot_number}) を登録しました（数量: 0）。</p>"
+            
+        elif action == 'delete':
+            stock = Stock.query.filter_by(item_code=item_code, lot_number=lot_number).first()
+            if stock:
+                # ログ記録
+                log = InventoryLog(item_code=stock.item_code, item_name=stock.item_name, lot_number=stock.lot_number, quantity=stock.quantity, action="削除")
+                db.session.add(log)
+                
+                db.session.delete(stock)
+                db.session.commit()
+                message = f"<p style='color: red;'>【削除】{stock.item_name} (LOT: {stock.lot_number}) を削除しました。</p>"
+            else:
+                message = "<p style='color: red;'>エラー: 該当する商品が見つかりませんでした。</p>"
 
-        stocks = Stock.query.all()
-        html = "<h1>📦 在庫管理システム</h1>"
-        html += "<p>環境: AWS EC2 (MySQL)</p><hr>"
+    return render_template('register.html', message=message)
+
+@app.route('/logs')
+def logs_page():
+    query = InventoryLog.query
+    
+    # 検索パラメータ
+    search = request.args.get('search', '')
+    if search:
+        query = query.filter(
+            (InventoryLog.item_code.contains(search)) | 
+            (InventoryLog.item_name.contains(search)) | 
+            (InventoryLog.lot_number.contains(search))
+        )
+    
+    logs = query.order_by(InventoryLog.timestamp.desc()).all()
+    
+    return render_template('logs.html', logs=logs, search=search)
+
+@app.route('/inventory', methods=['GET', 'POST'])
+def inventory_page():
+    # 在庫更新処理
+    if request.method == 'POST':
+        stock_id = request.form.get('stock_id')
+        amount = int(request.form.get('amount'))
+        action_type = request.form.get('action_type') # "in" or "out"
         
-        # 入力フォーム
-        html += """
-        <h3>新規登録 / 削除</h3>
-        <form method="POST">
-            品番: <input type="text" name="item_code" id="item_code" required>
-            <button type="button" onclick="fetchItemName()">品番検索</button><br>
-            品名: <input type="text" name="item_name" id="item_name">
-            <button type="button" onclick="fetchItemCode()">品名検索</button><br>
-            ロットNo.: <input type="text" name="lot_number" id="lot_number" required>
-            <button type="button" onclick="fetchItemByLot()">ロット検索</button><br>
-            <br>
-            <button type="submit" name="action" value="add">追加</button>
-            <button type="submit" name="action" value="delete" style="background-color: #ff4d4d; color: white;" onclick="return confirm('本当に削除しますか？');">削除</button>
-        </form>
-        <script>
-        function fetchItemName() {
-            const code = document.getElementById('item_code').value;
-            if (!code) return;
-            fetch('/api/item/' + code)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.item_name) {
-                        document.getElementById('item_name').value = data.item_name;
-                        if(data.lot_number) document.getElementById('lot_number').value = data.lot_number;
-                    } else {
-                        alert('商品が見つかりませんでした');
-                        document.getElementById('item_name').value = '';
-                    }
-                })
-                .catch(err => console.error(err));
-        }
-        function fetchItemCode() {
-            const name = document.getElementById('item_name').value;
-            if (!name) return;
-            fetch('/api/code/' + name)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.item_code) {
-                        document.getElementById('item_code').value = data.item_code;
-                        if(data.lot_number) document.getElementById('lot_number').value = data.lot_number;
-                    } else {
-                        alert('商品が見つかりませんでした');
-                        document.getElementById('item_code').value = '';
-                    }
-                })
-                .catch(err => console.error(err));
-        }
-        function fetchItemByLot() {
-            const lot = document.getElementById('lot_number').value;
-            if (!lot) return;
-            fetch('/api/lot/' + lot)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.item_code) {
-                        document.getElementById('item_code').value = data.item_code;
-                        document.getElementById('item_name').value = data.item_name;
-                    } else {
-                        alert('商品が見つかりませんでした');
-                    }
-                })
-                .catch(err => console.error(err));
-        }
-        </script>
-        <hr>
-        """
+        stock = Stock.query.get(stock_id)
+        if stock:
+            if action_type == 'in':
+                stock.quantity += amount
+                log_action = "入庫"
+            elif action_type == 'out':
+                stock.quantity -= amount
+                log_action = "出庫"
+            
+            # ログ記録
+            log = InventoryLog(item_code=stock.item_code, item_name=stock.item_name, lot_number=stock.lot_number, quantity=amount, action=log_action)
+            db.session.add(log)
+            db.session.commit()
         
-        html += "<h3>在庫一覧</h3><ul>"
-        for stock in stocks:
-            html += f"<li>【{stock.item_code}】 {stock.item_name} (LOT: {stock.lot_number})</li>"
-        html += "</ul>"
-        
-        return html
-    except Exception as e:
-        return f"<h1>⚠️ エラー</h1><p>{str(e)}</p>"
+        return redirect(url_for('inventory_page'))
+
+    # 表示処理
+    query = Stock.query
+    search = request.args.get('search', '')
+    if search:
+        query = query.filter(
+            (Stock.item_code.contains(search)) | 
+            (Stock.item_name.contains(search)) | 
+            (Stock.lot_number.contains(search))
+        )
+
+    stocks = query.all()
+    
+    return render_template('inventory.html', stocks=stocks, search=search)
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    # ローカル開発用ポート設定（80番ポートで起動）
+    # ローカル開発用ポート設定
     app.run(debug=True, host='127.0.0.1', port=5000)

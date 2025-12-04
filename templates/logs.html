@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>📜 入出庫記録</h1>
+
+<form method="GET" style="margin-bottom: 20px;">
+    <input type="text" name="search" placeholder="品番・品名・ロットNoで検索" value="{{ search }}">
+    <button type="submit">検索</button>
+    <a href="{{ url_for('logs_page') }}"><button type="button">リセット</button></a>
+</form>
+
+<table>
+    <tr>
+        <th>日時</th>
+        <th>操作</th>
+        <th>品番</th>
+        <th>品名</th>
+        <th>ロットNo.</th>
+        <th>数量</th>
+    </tr>
+    {% for log in logs %}
+    {% set color = 'black' %}
+    {% if log.action == '入庫' %}
+    {% set color = 'blue' %}
+    {% elif log.action == '出庫' %}
+    {% set color = 'red' %}
+    {% elif log.action == '新規登録' %}
+    {% set color = 'green' %}
+    {% endif %}
+    <tr>
+        <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td style="color: {{ color }}; font-weight: bold;">{{ log.action }}</td>
+        <td>{{ log.item_code }}</td>
+        <td>{{ log.item_name }}</td>
+        <td>{{ log.lot_number }}</td>
+        <td>{{ log.quantity }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

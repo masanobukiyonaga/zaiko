@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在庫管理システム</title>
+    <style>
+        body { font-family: sans-serif; }
+        nav { background-color: #f8f9fa; padding: 10px; margin-bottom: 20px; border-bottom: 1px solid #ddd; }
+        nav a { margin-right: 20px; text-decoration: none; font-weight: bold; color: #333; }
+        nav a:hover { text-decoration: underline; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #eee; }
+        .btn-in { color: blue; }
+        .btn-out { color: red; }
+        .message { margin-bottom: 15px; font-weight: bold; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <a href="{{ url_for('register_page') }}">新規登録 / 削除</a>
+        <a href="{{ url_for('logs_page') }}">入出庫記録</a>
+        <a href="{{ url_for('inventory_page') }}">在庫確認 / 入出庫</a>
+    </nav>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

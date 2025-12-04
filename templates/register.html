@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>📝 新規登録 / 削除</h1>
+
+{% if message %}
+<div class="message">{{ message|safe }}</div>
+{% endif %}
+
+<form method="POST">
+    品番: <input type="text" name="item_code" id="item_code" required>
+    <button type="button" onclick="fetchItemName()">品番検索</button><br>
+    品名: <input type="text" name="item_name" id="item_name">
+    <button type="button" onclick="fetchItemCode()">品名検索</button><br>
+    ロットNo.: <input type="text" name="lot_number" id="lot_number" required>
+    <button type="button" onclick="fetchItemByLot()">ロット検索</button><br>
+    <br>
+    <button type="submit" name="action" value="add">新規登録</button>
+    <button type="submit" name="action" value="delete" style="background-color: #ff4d4d; color: white;"
+        onclick="return confirm('本当に削除しますか？');">削除</button>
+</form>
+{% endblock %}
